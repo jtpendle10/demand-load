@@ -39,7 +39,6 @@
   <script src="https://code.highcharts.com/highcharts.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      // ← Replace <PROXY_URL> with your actual proxy:
       const proxyUrl = "https://load-proxy.onrender.com/api/demand";
 
       const loadingEl = document.getElementById("loadingMessage");
@@ -58,18 +57,19 @@
           return res.json();
         })
         .then((graphqlResponse) => {
-          // Drill into data
+          // 1) Get all mainServices nodes
           const services = graphqlResponse.data.facility.mainServices.nodes;
           if (!services || services.length === 0) {
             throw new Error("No mainServices found for facility.");
           }
 
-          const demandNodes = services[0].demand.nodes;
+          // 2) Fix: the array is under demand.data.nodes (not demand.nodes)
+          const demandNodes = services[0].demand.data.nodes;
           if (!demandNodes || demandNodes.length === 0) {
             throw new Error("No demand data was returned.");
           }
 
-          // Extract numeric demand values
+          // 3) Extract numeric demand values
           const allDemands = demandNodes
             .map(pt => pt.data)
             .filter(val => typeof val === "number");
@@ -78,7 +78,7 @@
             throw new Error("Demand array was empty or non-numeric.");
           }
 
-          // Sort descending and compute percent-of-time ≥ each value
+          // 4) Sort descending and compute percent-of-time ≥ each value
           const sorted = allDemands.slice().sort((a, b) => b - a);
           const N = sorted.length;
           const points = sorted.map((d, i) => {
@@ -86,7 +86,7 @@
             return [parseFloat(pct.toFixed(2)), parseFloat(d.toFixed(2))];
           });
 
-          // Hide loading & show container
+          // 5) Hide loading & show container
           loadingEl.style.display = "none";
           chartContainer.style.display = "block";
 
