@@ -14,29 +14,21 @@
       gap: 1rem;
       align-items: center;
     }
-    .controls label {
-      font-weight: bold;
-    }
     #container {
       width: 100%;
       max-width: 800px;
       height: 500px;
       margin: auto;
-      display: none; /* hidden until data loads */
-    }
-    #loadingMessage {
-      text-align: center;
-      font-style: italic;
-      margin-top: 2rem;
-      color: #666;
       display: none;
     }
+    #loadingMessage,
     #errorMessage {
       text-align: center;
-      color: red;
-      margin-top: 2rem;
+      margin-top: 1rem;
       display: none;
     }
+    #loadingMessage { font-style: italic; color: #666; }
+    #errorMessage { color: red; }
   </style>
 </head>
 <body>
@@ -47,7 +39,6 @@
     <input id="fromDate" type="date" />
     <label for="toDate">To:</label>
     <input id="toDate" type="date" />
-
     <button id="loadButton">Load Data</button>
   </div>
 
@@ -55,145 +46,114 @@
   <div id="errorMessage"></div>
   <div id="container"></div>
 
-  <!-- Highcharts CDN -->
   <script src="https://code.highcharts.com/highcharts.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const proxyUrl = "https://load-proxy.onrender.com/api/demand";
-
       const fromEl = document.getElementById("fromDate");
-      const toEl = document.getElementById("toDate");
+      const toEl   = document.getElementById("toDate");
       const loadBtn = document.getElementById("loadButton");
       const loadingEl = document.getElementById("loadingMessage");
-      const errorEl = document.getElementById("errorMessage");
+      const errorEl   = document.getElementById("errorMessage");
       const chartContainer = document.getElementById("container");
-      let chart = null; // will hold the Highcharts chart instance
+      let chart = null;
 
-      // Helper: clear previous messages/chart
       function resetUI() {
         errorEl.style.display = "none";
         errorEl.innerText = "";
         chartContainer.style.display = "none";
-        chartContainer.innerHTML = ""; // remove old chart
+        chartContainer.innerHTML = "";
         if (chart) {
           chart.destroy();
           chart = null;
         }
       }
 
-      // Called when user clicks "Load Data"
       loadBtn.addEventListener("click", () => {
         resetUI();
-
-        // 1) Read dates; require non‐empty
-        const fromDate = fromEl.value; // e.g. "2025-04-01"
-        const toDate   = toEl.value;   // e.g. "2025-04-15"
+        const fromDate = fromEl.value; // “YYYY-MM-DD”
+        const toDate   = toEl.value;   // “YYYY-MM-DD”
         if (!fromDate || !toDate) {
           errorEl.style.display = "block";
           errorEl.innerText = "Please select both From and To dates.";
           return;
         }
 
-        // 2) Append "T00:00:00" to each
-        let fromIso = fromDate + "T00:00:00";
-        let toIso   = toDate   + "T00:00:00";
+        const fromIso = fromDate + "T00:00:00";
+        const toIso   = toDate   + "T00:00:00";
 
-        // (Optional fallback if user somehow leaves them blank—won’t run because we checked above.)
-        if (!fromIso || !toIso) {
-          const today = new Date();
-          const sevenDaysAgo = new Date(today);
-          sevenDaysAgo.setDate(today.getDate() - 7);
-
-          const pad = n => n.toString().padStart(2, "0");
-          const isoDate = d =>
-            `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
-
-          if (!fromIso) fromIso = isoDate(sevenDaysAgo);
-          if (!toIso)   toIso   = isoDate(today);
-        }
-
-        // 3) Show loading message
         loadingEl.style.display = "block";
 
-        // 4) POST { from, to } to proxy  ← exactly these keys, not "fromValue"/"toValue"
         fetch(proxyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ from: fromIso, to: toIso })
         })
-          .then(async (res) => {
-            if (!res.ok) {
-              const txt = await res.text();
-              throw new Error(`Proxy returned ${res.status}: ${txt}`);
-            }
-            return res.json();
-          })
-          .then((graphqlResponse) => {
-            // Drill into response
-            const services = graphqlResponse.data.facility.mainServices.nodes;
-            if (!services || services.length === 0) {
-              throw new Error("No mainServices found for facility.");
-            }
+        .then(async (res) => {
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(`Proxy returned ${res.status}: ${txt}`);
+          }
+          return res.json();
+        })
+        .then((graphqlResponse) => {
+          const services = graphqlResponse.data.facility.mainServices.nodes;
+          if (!services || services.length === 0) {
+            throw new Error("No mainServices found for facility.");
+          }
 
-            // demand.data.nodes (not demand.nodes)
-            const demandNodes = services[0].demand.data.nodes;
-            if (!demandNodes || demandNodes.length === 0) {
-              throw new Error("No demand data was returned.");
-            }
+          const demandNodes = services[0].demand.data.nodes;
+          if (!demandNodes || demandNodes.length === 0) {
+            throw new Error("No demand data was returned.");
+          }
 
-            // Extract numeric demand values
-            const allDemands = demandNodes
-              .map(pt => pt.data)
-              .filter(val => typeof val === "number");
+          const allDemands = demandNodes
+            .map(pt => pt.data)
+            .filter(val => typeof val === "number");
+          if (allDemands.length === 0) {
+            throw new Error("Demand array was empty or non-numeric.");
+          }
 
-            if (allDemands.length === 0) {
-              throw new Error("Demand array was empty or non-numeric.");
-            }
-
-            // Sort descending and compute percent-of-time ≥ each value
-            const sorted = allDemands.slice().sort((a, b) => b - a);
-            const N = sorted.length;
-            const points = sorted.map((d, i) => {
-              const pct = (i / N) * 100;
-              return [parseFloat(pct.toFixed(2)), parseFloat(d.toFixed(2))];
-            });
-
-            // Hide loading, show container, and draw chart
-            loadingEl.style.display = "none";
-            chartContainer.style.display = "block";
-
-            chart = Highcharts.chart("container", {
-              chart: { type: "line", zoomType: "x" },
-              title: { text: `Load-Duration (${fromIso.slice(0,10)} → ${toIso.slice(0,10)})` },
-              xAxis: {
-                title: { text: "Percent of Time (%)" },
-                labels: { format: "{value}%" },
-                min: 0,
-                max: 100
-              },
-              yAxis: { title: { text: "Demand (kW)" } },
-              tooltip: {
-                headerFormat: "",
-                pointFormat:
-                  "<b>{point.y} kW</b><br>Time ≥ this load: {point.x:.2f}%"
-              },
-              series: [
-                {
-                  name: "Demand (kW)",
-                  data: points,
-                  marker: { enabled: false },
-                  lineWidth: 1.5
-                }
-              ],
-              credits: { enabled: false }
-            });
-          })
-          .catch(err => {
-            console.error(err);
-            loadingEl.style.display = "none";
-            errorEl.style.display = "block";
-            errorEl.innerText = "Error: " + err.message;
+          const sorted = allDemands.slice().sort((a, b) => b - a);
+          const N = sorted.length;
+          const points = sorted.map((d, i) => {
+            const pct = (i / N) * 100;
+            return [parseFloat(pct.toFixed(2)), parseFloat(d.toFixed(2))];
           });
+
+          loadingEl.style.display = "none";
+          chartContainer.style.display = "block";
+
+          chart = Highcharts.chart("container", {
+            chart: { type: "line", zoomType: "x" },
+            title: { text: `Load-Duration (${fromIso.slice(0,10)} → ${toIso.slice(0,10)})` },
+            xAxis: {
+              title: { text: "Percent of Time (%)" },
+              labels: { format: "{value}%" },
+              min: 0,
+              max: 100
+            },
+            yAxis: { title: { text: "Demand (kW)" } },
+            tooltip: {
+              headerFormat: "",
+              pointFormat:
+                "<b>{point.y} kW</b><br>Time ≥ this load: {point.x:.2f}%"
+            },
+            series: [{
+              name: "Demand (kW)",
+              data: points,
+              marker: { enabled: false },
+              lineWidth: 1.5
+            }],
+            credits: { enabled: false }
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          loadingEl.style.display = "none";
+          errorEl.style.display = "block";
+          errorEl.innerText = "Error: " + err.message;
+        });
       });
     });
   </script>
