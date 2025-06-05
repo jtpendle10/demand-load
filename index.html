@@ -87,38 +87,39 @@
 
         // 1) Read dates; require non‐empty
         const fromDate = fromEl.value; // e.g. "2025-04-01"
-        const toDate = toEl.value;     // e.g. "2025-04-15"
+        const toDate   = toEl.value;   // e.g. "2025-04-15"
         if (!fromDate || !toDate) {
           errorEl.style.display = "block";
           errorEl.innerText = "Please select both From and To dates.";
           return;
         }
 
-        // 2) Append "T00:00:00" to each (you could also let users pick time if needed)
-        const fromIso = fromDate + "T00:00:00";
-        const toIso   = toDate   + "T00:00:00";
+        // 2) Append "T00:00:00" to each
+        let fromIso = fromDate + "T00:00:00";
+        let toIso   = toDate   + "T00:00:00";
 
+        // (Optional fallback if user somehow leaves them blank—won’t run because we checked above.)
         if (!fromIso || !toIso) {
-  const today = new Date();
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(today.getDate() - 7);
+          const today = new Date();
+          const sevenDaysAgo = new Date(today);
+          sevenDaysAgo.setDate(today.getDate() - 7);
 
-  const pad = n => n.toString().padStart(2, "0");
-  const isoDate = d =>
-    `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
+          const pad = n => n.toString().padStart(2, "0");
+          const isoDate = d =>
+            `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
 
-  if (!fromIso) fromIso = isoDate(sevenDaysAgo);
-  if (!toIso)   toIso   = isoDate(today);
-}
+          if (!fromIso) fromIso = isoDate(sevenDaysAgo);
+          if (!toIso)   toIso   = isoDate(today);
+        }
 
         // 3) Show loading message
         loadingEl.style.display = "block";
 
-        // 4) POST { from, to } to proxy
+        // 4) POST { from, to } to proxy  ← exactly these keys, not "fromValue"/"toValue"
         fetch(proxyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fromValue: fromIso, toValue: toIso })
+          body: JSON.stringify({ from: fromIso, to: toIso })
         })
           .then(async (res) => {
             if (!res.ok) {
