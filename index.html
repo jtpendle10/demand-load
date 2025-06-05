@@ -2,12 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Load-Duration Curve (Date‐Range Selector)2</title>
+  <title>Load-Duration Curve (Date‐Range Selector)</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 1rem;
-    }
+    body { font-family: Arial, sans-serif; margin: 1rem; }
     .controls {
       margin-bottom: 1rem;
       display: flex;
@@ -21,8 +18,7 @@
       margin: auto;
       display: none;
     }
-    #loadingMessage,
-    #errorMessage {
+    #loadingMessage, #errorMessage {
       text-align: center;
       margin-top: 1rem;
       display: none;
@@ -71,8 +67,8 @@
 
       loadBtn.addEventListener("click", () => {
         resetUI();
-        const fromDate = fromEl.value; // “YYYY-MM-DD”
-        const toDate   = toEl.value;   // “YYYY-MM-DD”
+        const fromDate = fromEl.value;
+        const toDate   = toEl.value;
         if (!fromDate || !toDate) {
           errorEl.style.display = "block";
           errorEl.innerText = "Please select both From and To dates.";
@@ -97,6 +93,16 @@
           return res.json();
         })
         .then((graphqlResponse) => {
+          // === ADDED DEBUG & GUARD RAILS ===
+          console.log("GraphQL response:", graphqlResponse);
+
+          if (!graphqlResponse.data) {
+            throw new Error("No `data` field in GraphQL response.");
+          }
+          if (!graphqlResponse.data.facility) {
+            throw new Error("No `facility` field in GraphQL response data.");
+          }
+
           const services = graphqlResponse.data.facility.mainServices.nodes;
           if (!services || services.length === 0) {
             throw new Error("No mainServices found for facility.");
@@ -107,6 +113,7 @@
             throw new Error("No demand data was returned.");
           }
 
+          // === EXISTING SORT & HIGHCHARTS LOGIC ===
           const allDemands = demandNodes
             .map(pt => pt.data)
             .filter(val => typeof val === "number");
@@ -130,8 +137,7 @@
             xAxis: {
               title: { text: "Percent of Time (%)" },
               labels: { format: "{value}%" },
-              min: 0,
-              max: 100
+              min: 0, max: 100
             },
             yAxis: { title: { text: "Demand (kW)" } },
             tooltip: {
