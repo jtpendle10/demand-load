@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Load-Duration Curve (Percentage of Time vs Demand)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 1rem;
+    }
+    #container {
+      width: 100%;
+      max-width: 800px;
+      height: 500px;
+      margin: auto;
+    }
+    #loadingMessage {
+      text-align: center;
+      font-style: italic;
+      margin-top: 2rem;
+      color: #666;
+    }
+    #errorMessage {
+      text-align: center;
+      color: red;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>Facility MDP1: Load-Duration Curve (April 2025)</h2>
+  <div id="loadingMessage">Loading demand data…</div>
+  <div id="errorMessage" style="display: none;"></div>
+  <div id="container" style="display: none;"></div>
+
+  <!-- 1) Include Highcharts from their official CDN -->
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const proxyUrl = "https://https://load-proxy.onrender.com/api/demand";
+      const loadingEl = document.getElementById("loadingMessage");
+      const errorEl = document.getElementById("errorMessage");
+      const chartContainer = document.getElementById("container");
+
+      // 2) Fetch data from our backend proxy
+      fetch(proxyUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Proxy returned ${res.status}: ${text}`);
+          }
+          return res.json();
+        })
+        .then((graphqlResponse) => {
+          //
+          // 3) Drill into the GraphQL response and extract ALL demand.values
+          //
+          // Path: data.facility.mainServices.nodes[0].demand.nodes → array of { data, time }
+          //
+          const services = graphqlResponse.data.facility.mainServices.nodes;
+          if (!services || services.length === 0) {
+            throw new Error("No mainServices found for facility.");
+          }
+
+          // We expect exactly one service with name = "MDP1"
+          const serviceNode = services[0];
+          if (!serviceNode.demand || !serviceNode.demand.nodes) {
+            throw new Error("No demand data was returned.");
+          }
+
+          // Extract all the numeric demand values (in kW) from each 15-minute node
+          const rawPoints = serviceNode.demand.nodes; // e.g. [{ data: 123.4, time: "2025-04-01T00:15:00" }, …]
+          const allDemands = rawPoints.map(pt => pt.data).filter(val => typeof val === "number");
+
+          if (allDemands.length === 0) {
+            throw new Error("Demand array was empty or non-numeric.");
+          }
+
+          // 4) Compute a load‐duration curve:
+          //    - Sort descending
+          //    - For each sorted demand d_i (i from 0..N-1), percentAbove = (i / N)*100
+          //
+          const sorted = allDemands.slice().sort((a,b) => b - a);
+          const N = sorted.length;
+          // Build two arrays: xData = [0%, 100%] length N, yData = corresponding demands
+          const xData = [];
+          const yData = [];
+          for (let i = 0; i < N; i++) {
+            const pct = (i / N) * 100; // percent of time at or ABOVE sorted[i]
+            xData.push(parseFloat(pct.toFixed(2)));
+            yData.push(parseFloat(sorted[i].toFixed(2)));
+          }
+
+          // 5) Render Highcharts
+          loadingEl.style.display = "none";
+          chartContainer.style.display = "block";
+
+          Highcharts.chart("container", {
+            chart: {
+              type: "line",
+              zoomType: "x"
+            },
+            title: {
+              text: "April 2025 Load-Duration Curve (MDP1)"
+            },
+            xAxis: {
+              title: {
+                text: "Percent of Time (%)"
+              },
+              labels: {
+                format: "{value}%"
+              },
+              // Show 0→100%
+              min: 0,
+              max: 100
+            },
+            yAxis: {
+              title: {
+                text: "Demand (kW)"
+              }
+            },
+            tooltip: {
+              headerFormat: "",
+              pointFormat: "<b>{point.y} kW</b><br>Time ≥ this load: {point.x:.2f}%"
+            },
+            series: [{
+              name: "Demand (kW)",
+              data: xData.map((x, i) => [x, yData[i]]),
+              marker: {
+                enabled: false
+              },
+              lineWidth: 1.5
+            }],
+            credits: {
+              enabled: false
+            }
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          loadingEl.style.display = "none";
+          errorEl.style.display = "block";
+          errorEl.innerText = "Error: " + err.message;
+        });
+    });
+  </script>
+</body>
+</html>
