@@ -98,6 +98,19 @@
         const fromIso = fromDate + "T00:00:00";
         const toIso   = toDate   + "T00:00:00";
 
+        if (!fromIso || !toIso) {
+  const today = new Date();
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 7);
+
+  const pad = n => n.toString().padStart(2, "0");
+  const isoDate = d =>
+    `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
+
+  if (!fromIso) fromIso = isoDate(sevenDaysAgo);
+  if (!toIso)   toIso   = isoDate(today);
+}
+
         // 3) Show loading message
         loadingEl.style.display = "block";
 
